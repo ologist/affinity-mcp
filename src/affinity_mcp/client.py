@@ -146,7 +146,8 @@ async def search_organizations(term: str, with_interaction_dates: bool = False) 
     params: dict[str, Any] = {"term": term}
     if with_interaction_dates:
         params["with_interaction_dates"] = "true"
-    return await _get_v1("/organizations", params)
+    data = await _get_v1("/organizations", params)
+    return data.get("organizations", data) if isinstance(data, dict) else data
 
 
 async def get_organization(org_id: int) -> Any:
@@ -176,7 +177,8 @@ async def search_persons(term: str, with_interaction_dates: bool = False) -> Any
     params: dict[str, Any] = {"term": term}
     if with_interaction_dates:
         params["with_interaction_dates"] = "true"
-    return await _get_v1("/persons", params)
+    data = await _get_v1("/persons", params)
+    return data.get("persons", data) if isinstance(data, dict) else data
 
 
 async def get_person(person_id: int) -> Any:
