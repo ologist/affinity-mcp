@@ -1,4 +1,4 @@
-"""Affinity API HTTP client (v1 + v2)."""
+"""Affinity API HTTP client (v1)."""
 
 import asyncio
 import base64
@@ -12,30 +12,23 @@ from affinity_mcp.settings import settings
 logger = logging.getLogger(__name__)
 
 _BASE_V1 = "https://api.affinity.co"
-_BASE_V2 = "https://api.affinity.co/v2"
 
-# Shared clients for connection pooling (one TLS handshake per process)
+# Shared client for connection pooling (one TLS handshake per process)
 _http_v1 = httpx.AsyncClient(base_url=_BASE_V1, timeout=30)
-_http_v2 = httpx.AsyncClient(base_url=_BASE_V2, timeout=30)
 
 # Rate limiting: max 10 concurrent outbound requests
 _rate_limit = asyncio.Semaphore(10)
 
 
 async def aclose() -> None:
-    """Close shared HTTP clients. Call on server shutdown."""
+    """Close shared HTTP client. Call on server shutdown."""
     await _http_v1.aclose()
-    await _http_v2.aclose()
 
 
 def _auth_header() -> dict[str, str]:
     """Basic auth: empty username, API key as password."""
     token = base64.b64encode(f":{settings.affinity_api_key}".encode()).decode()
     return {"Authorization": f"Basic {token}"}
-
-
-def _v2_auth_header() -> dict[str, str]:
-    return {"Authorization": f"Bearer {settings.affinity_api_key}"}
 
 
 async def _get_v1(path: str, params: dict | None = None) -> Any:
@@ -81,57 +74,6 @@ async def _delete_v1(path: str) -> Any:
     async with _rate_limit:
         try:
             r = await _http_v1.delete(path, headers=_auth_header())
-            r.raise_for_status()
-            return r.json()
-        except httpx.HTTPStatusError as e:
-            raise RuntimeError(f"Affinity API error: {e.response.status_code} on DELETE {path}") from None
-        except httpx.RequestError:
-            raise RuntimeError(f"Affinity API connection error on DELETE {path}") from None
-
-
-async def _get_v2(path: str, params: dict | None = None) -> Any:
-    async with _rate_limit:
-        try:
-            r = await _http_v2.get(path, headers=_v2_auth_header(), params=params)
-            r.raise_for_status()
-            return r.json()
-        except httpx.HTTPStatusError as e:
-            raise RuntimeError(f"Affinity API error: {e.response.status_code} on GET {path}") from None
-        except httpx.RequestError:
-            raise RuntimeError(f"Affinity API connection error on GET {path}") from None
-
-
-async def _post_v2(path: str, body: dict) -> Any:
-    logger.info("POST %s", path)
-    async with _rate_limit:
-        try:
-            r = await _http_v2.post(path, headers=_v2_auth_header(), json=body)
-            r.raise_for_status()
-            return r.json()
-        except httpx.HTTPStatusError as e:
-            raise RuntimeError(f"Affinity API error: {e.response.status_code} on POST {path}") from None
-        except httpx.RequestError:
-            raise RuntimeError(f"Affinity API connection error on POST {path}") from None
-
-
-async def _patch_v2(path: str, body: dict) -> Any:
-    logger.info("PATCH %s", path)
-    async with _rate_limit:
-        try:
-            r = await _http_v2.patch(path, headers=_v2_auth_header(), json=body)
-            r.raise_for_status()
-            return r.json()
-        except httpx.HTTPStatusError as e:
-            raise RuntimeError(f"Affinity API error: {e.response.status_code} on PATCH {path}") from None
-        except httpx.RequestError:
-            raise RuntimeError(f"Affinity API connection error on PATCH {path}") from None
-
-
-async def _delete_v2(path: str) -> Any:
-    logger.warning("DELETE %s", path)
-    async with _rate_limit:
-        try:
-            r = await _http_v2.delete(path, headers=_v2_auth_header())
             r.raise_for_status()
             return r.json()
         except httpx.HTTPStatusError as e:
@@ -263,15 +205,26 @@ async def get_notes(
     person_id: int | None = None,
     organization_id: int | None = None,
     opportunity_id: int | None = None,
+    creator_id: int | None = None,
+    page_size: int = 500,
+    page_token: str | None = None,
 ) -> Any:
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = {"page_size": page_size}
     if person_id:
         params["person_id"] = person_id
     if organization_id:
         params["organization_id"] = organization_id
     if opportunity_id:
         params["opportunity_id"] = opportunity_id
-    return await _get_v1("/notes", params or None)
+    if creator_id:
+        params["creator_id"] = creator_id
+    if page_token:
+        params["page_token"] = page_token
+    data = await _get_v1("/notes", params)
+    # Normalize plain array → paginated dict for consistency with get_list_entries
+    if isinstance(data, list):
+        return {"notes": data, "next_page_token": None}
+    return data
 
 
 async def create_note(
@@ -279,6 +232,7 @@ async def create_note(
     person_ids: list[int] | None = None,
     organization_id: int | None = None,
     opportunity_id: int | None = None,
+    creator_id: int | None = None,
 ) -> Any:
     body: dict[str, Any] = {"content": content}
     if person_ids:
@@ -287,6 +241,8 @@ async def create_note(
         body["organization_id"] = organization_id
     if opportunity_id:
         body["opportunity_id"] = opportunity_id
+    if creator_id:
+        body["creator_id"] = creator_id
     return await _post_v1("/notes", body)
 
 

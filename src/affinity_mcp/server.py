@@ -362,7 +362,10 @@ async def get_notes(
     person_id: int | None = None,
     organization_id: int | None = None,
     opportunity_id: int | None = None,
-) -> list[dict[str, Any]]:
+    creator_id: int | None = None,
+    page_size: int = 500,
+    page_token: str | None = None,
+) -> dict[str, Any]:
     """
     노트를 조회합니다. 조건 없이 호출하면 전체 노트를 반환합니다.
 
@@ -370,11 +373,14 @@ async def get_notes(
         person_id: 특정 인물의 노트만 조회
         organization_id: 특정 조직의 노트만 조회
         opportunity_id: 특정 기회의 노트만 조회
+        creator_id: 특정 작성자의 노트만 조회
+        page_size: 한 페이지당 항목 수 (기본 500)
+        page_token: 다음 페이지 토큰 (이전 응답의 next_page_token 값)
 
     Returns:
-        노트 목록 (내용, 작성자, 날짜 등)
+        notes(노트 목록)와 next_page_token 포함 딕셔너리
     """
-    return await client.get_notes(person_id, organization_id, opportunity_id)
+    return await client.get_notes(person_id, organization_id, opportunity_id, creator_id, page_size, page_token)
 
 
 @mcp.tool()
@@ -383,6 +389,7 @@ async def create_note(
     person_ids: list[int] | None = None,
     organization_id: int | None = None,
     opportunity_id: int | None = None,
+    creator_id: int | None = None,
 ) -> dict[str, Any]:
     """
     새 노트를 작성합니다.
@@ -392,12 +399,13 @@ async def create_note(
         person_ids: 연결할 인물 ID 목록
         organization_id: 연결할 조직 ID
         opportunity_id: 연결할 기회 ID
+        creator_id: 작성자 인물 ID (지정하지 않으면 API 키 소유자)
 
     Returns:
         생성된 노트 정보
     """
     _check_write_allowed()
-    return await client.create_note(content, person_ids, organization_id, opportunity_id)
+    return await client.create_note(content, person_ids, organization_id, opportunity_id, creator_id)
 
 
 @mcp.tool()
